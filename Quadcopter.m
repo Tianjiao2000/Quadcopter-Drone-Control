@@ -54,28 +54,22 @@ classdef Quadcopter < handle
             force = obj.m * obj.g / 4 / obj.k;
             input = [force; force; force; force];
 
-            state = [obj.pos; obj.xdot; obj.theta; obj.omega];
+            model = linearmodel(obj, input);
+            A = model(1);
+            B = model(2);
+
+            result = A * [obj.pos; obj.xdot; obj.theta; obj.omega] + B * input;
+            obj.pos = result(1:3);
+            obj.theta = result(7:9);
+            
             % dont know x2
 
-            x1_dot = obj.xdot;
-            x2_dot = [0; 0; -obj.g] + 1 / obj.m * rotation(obj, obj.theta) * obj.k * [0; 0; obj.k * sum(input)] + ...
-                1 / obj.m * (-obj.kd * obj.xdot);
-            x3_dot = omega2thetadot(obj, obj.omega, obj.theta); 
-            x4_dot = [(obj.L * obj.k * (input(1) - input(3))) / (obj.I(1,1)); 
-                    (obj.L * obj.k * (input(2) - input(4))) / (obj.I(2,2));
-                    (obj.b * (input(1) - input(2) + input(3) - input(4))) / (obj.I(3,3))] - ...
-                    [(obj.I(2,2) - obj.I(3,3)) / obj.I(1,1) * obj.omega(2) * obj.omega(3);
-                    (obj.I(3,3) - obj.I(1,1)) / obj.I(2,2) * obj.omega(1) * obj.omega(3); 
-                    (obj.I(1,1) - obj.I(2,2)) / obj.I(3,3) * obj.omega(1) * obj.omega(2)];
-
-            dynamics = [x1_dot; x2_dot; x3_dot; x4_dot];
-            display(state);
-            A = jacobian(dynamics, state);
-            B = jacobian(dynamics, input);
-
-            re = A * state + B * input;
-            obj.pos = re(1: 3);
-            obj.theta = re(7: 9);
+            % x4_dot = [(obj.L * obj.k * (input(1) - input(3))) / (obj.I(1,1)); 
+            %         (obj.L * obj.k * (input(2) - input(4))) / (obj.I(2,2));
+            %         (obj.b * (input(1) - input(2) + input(3) - input(4))) / (obj.I(3,3))] - ...
+            %         [(obj.I(2,2) - obj.I(3,3)) / obj.I(1,1) * obj.omega(2) * obj.omega(3);
+            %         (obj.I(3,3) - obj.I(1,1)) / obj.I(2,2) * obj.omega(1) * obj.omega(3); 
+            %         (obj.I(1,1) - obj.I(2,2)) / obj.I(3,3) * obj.omega(1) * obj.omega(2)];
 
             % obj.omega = thetadot2omega(obj, obj.thetadot, obj.theta);
             % % Compute linear and angular accelerations.
@@ -87,6 +81,60 @@ classdef Quadcopter < handle
             % obj.xdot = obj.xdot + obj.dt * a;
             % obj.pos = obj.pos + obj.dt * obj.xdot;
             obj.rot = [obj.theta(3); obj.theta(1); obj.theta(2)];
+        end
+
+        function model = linearmodel(obj, input)
+            syms p [3, 1] %x_dot pos
+            syms linearv [3, 1] %x xdot linear velocity
+            syms angles [3, 1] %theta 
+            syms angularv [3, 1] %omega angular velocity
+            syms dynamics [12, 1]
+            syms force [4, 1]
+            % state = [obj.pos; obj.xdot; obj.theta; obj.omega];
+            % dynamics = [x1_dot; x2_dot; x3_dot; x4_dot];
+            state = [p; linearv; angles; angularv];
+
+            % x1_dot = obj.xdot;
+            dynamics(1:3) = linearv;
+
+            % x2_dot = [0; 0; -obj.g] + 1 / obj.m * rotation(obj, obj.theta) * obj.k 
+            % * [0; 0; obj.k * sum(input)] + 1 / obj.m * (-obj.kd * obj.xdot);
+            % phi 1 theta 2 psi 3
+            phi = angles(1);
+            theta_a = angles(2);
+            psi = angles(3);
+            R = [cos(psi)*cos(theta_a), cos(psi)*sin(phi)*sin(theta_a) - cos(phi)*sin(psi), sin(phi)*sin(psi) + cos(phi)*cos(psi)*sin(theta_a);
+                cos(theta_a)*sin(psi), cos(phi)*cos(psi) + sin(phi)*sin(psi)*sin(theta_a), cos(phi)*sin(psi)*sin(theta_a) - cos(psi)*sin(phi);
+                -sin(theta_a), cos(theta_a)*sin(phi), cos(phi)*cos(theta_a)];
+            dynamics(4:6) = [0; 0; -obj.g] + 1 / obj.m * R * [0; 0; obj.k * ...
+                (force(1) + force(2) + force(3) + force(4))] + 1 / obj.m * -obj.kd * linearv;
+
+            % x3_dot = omega2thetadot(obj, obj.omega, obj.theta); 
+            dynamics(7:9) = inv([1, 0 ,-sin(theta_a);
+                0, cos(phi), cos(theta_a)*sin(phi);
+                0, -sin(phi), cos(theta_a)*cos(phi)]) * angularv;
+            % x4_dot = [(obj.L * obj.k * (input(1) - input(3))) / (obj.I(1,1)); 
+            %         (obj.L * obj.k * (input(2) - input(4))) / (obj.I(2,2));
+            %         (obj.b * (input(1) - input(2) + input(3) - input(4))) / (obj.I(3,3))] - ...
+            %         [(obj.I(2,2) - obj.I(3,3)) / obj.I(1,1) * obj.omega(2) * obj.omega(3);
+            %         (obj.I(3,3) - obj.I(1,1)) / obj.I(2,2) * obj.omega(1) * obj.omega(3); 
+            %         (obj.I(1,1) - obj.I(2,2)) / obj.I(3,3) * obj.omega(1) * obj.omega(2)];
+            dynamics(10:12) = [(obj.L * obj.k * (force(1) - force(3))) / (obj.I(1,1)); 
+                    (obj.L * obj.k * (force(2) - force(4))) / (obj.I(2,2));
+                    (obj.b * (force(1) - force(2) + force(3) - force(4))) / (obj.I(3,3))] - ...
+                    [(obj.I(2,2) - obj.I(3,3)) / obj.I(1,1) * angularv(2) * angularv(3);
+                    (obj.I(3,3) - obj.I(1,1)) / obj.I(2,2) * angularv(1) * angularv(3); 
+                    (obj.I(1,1) - obj.I(2,2)) / obj.I(3,3) * angularv(1) * angularv(2)];
+            A = jacobian(dynamics, state);
+            B = jacobian(dynamics, force);
+            % display(input);
+            % display(force);
+
+            C = [1 0 0 0 0 0 0 0 0 0 0 0];
+            D = [0];
+
+            inv_pend_sys = ss(A,B,C,D);
+            model = c2d(inv_pend_sys, 0.1, 'zoh');
         end
 
         function omega = thetadot2omega(~, thetadot, theta)
