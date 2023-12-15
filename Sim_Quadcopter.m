@@ -4,9 +4,9 @@ clear all;
 close all;
 
 % Simulation parameters
-TOTAL_TIME  = 20;
-dt          = 0.05;
-TIME_SCALE  = 0.5; % slows down simulation if > 1, speeds up if < 1 (and if computation allows...)
+TOTAL_TIME  = 20`;
+dt          = 0.5;
+TIME_SCALE  = 0.01; % slows down simulation if > 1, speeds up if < 1 (and if computation allows...)
 
 
 % Initialise plot
@@ -25,9 +25,8 @@ grid ON
 grid MINOR
 ax1.Toolbar.Visible = 'off';
 ax1.Interactions = [];
-
-% Initialise Simulation
 drone1 = Quadcopter(ax1);
+% drone1 = Quadcopter_T(ax1);
 
 % Run Simulation
 for t = 0:dt:TOTAL_TIME
@@ -35,7 +34,10 @@ for t = 0:dt:TOTAL_TIME
     cla
     
     % _______ IMPLEMENT CONTROLLER + SIMULATION PHYSICS HERE ______ %
+    force = (0.3 * 9.8) / 4;
+    input = [force+0.001; force+0.001; force+0.001; force+0.001];
     drone1.update(t);
+    % drone1.update(t, input);
     drone1.plot;
     % _______ IMPLEMENT CONTROLLER + SIMULATION PHYSICS HERE ______ %
     
